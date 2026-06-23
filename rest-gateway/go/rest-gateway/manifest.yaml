@@ -5,7 +5,7 @@ metadata:
   displayName: REST Gateway
   description: Shared AppDarta gateway scaffold with routing, handler folders, policy
     hooks, and config handoff.
-  version: 1.0.0
+  version: 1.1.0
   author: AppDarta Platform
 spec:
   nodeKind: gateway
@@ -15,10 +15,16 @@ spec:
   files:
   - path: gateway/router.go
     template: router.go.tmpl
-    description: Gateway bootstrap and route registration shell
+    description: Route setup — reads in/out-handlers.yaml and mounts all handlers (GW-* compliant)
   - path: gateway/middleware.go
     template: middleware.go.tmpl
-    description: Gateway middleware chain entrypoint
+    description: Middleware chain — request-ID injection + structured logging (GW-NO-NOOP-MW compliant)
+  - path: cmd/gateway/main.go
+    template: main.go.tmpl
+    description: Entry point — creates mux, wires middleware, calls routes.Setup
+  - path: Dockerfile
+    template: Dockerfile.tmpl
+    description: Multi-stage Docker build targeting ./cmd/gateway (DOCKER-MAIN-TARGET compliant)
   - path: gateway/policy.go
     template: policy.go.tmpl
     description: Policy evaluation adapter
