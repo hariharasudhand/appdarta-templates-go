@@ -1,0 +1,26 @@
+apiVersion: appdarta.io/v1
+kind: CodeTemplate
+metadata:
+  name: tank-postgres-dockerfile
+  displayName: "PostgreSQL Tank Dockerfile"
+  description: "PostgreSQL service Dockerfile + compose fragment for tank packaging-scripts"
+  version: "1.0.0"
+  author: "AppDarta Platform"
+spec:
+  nodeKind: tank
+  techStacks: [PostgreSQL, postgres]
+  patternKind: sql-connector
+  files:
+    - path: "tanks/{{ .TankName }}/Dockerfile"
+      template: "Dockerfile.tmpl"
+      description: "PostgreSQL service Dockerfile"
+    - path: "tanks/{{ .TankName }}/docker-compose.fragment.yml"
+      template: "docker-compose.fragment.yml.tmpl"
+      description: "Docker Compose fragment using expose (no host port collision)"
+  intelligence:
+    maturityLevel: stable
+    complexityFloor: 1
+    complexityIdeal: 2
+    complexityCeiling: 3
+    tags: [postgres, dockerfile, tank, sql]
+templatesApiVersion: "1"
