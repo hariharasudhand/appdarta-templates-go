@@ -1,0 +1,9 @@
+services:
+  {{ .AgentName }}:
+    build:
+      context: .
+      dockerfile: agents/{{ .AgentName }}/Dockerfile
+    expose:
+      - "8080"
+    environment:
+      - PORT=8080
