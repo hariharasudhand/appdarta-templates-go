@@ -1,7 +1,7 @@
 FROM golang:1.23 AS build
 WORKDIR /src
 COPY . .
-RUN test -f go.mod && go build -o /out/{{ snake .AgentName }} ./agents/{{ .AgentName }} || (echo "expected Go agent source under agents/{{ .AgentName }}" && exit 1)
+RUN test -f go.mod && go build -o /out/{{ snake .AgentName }} ./cmd/{{ .AgentName }} || (echo "expected Go agent source under cmd/{{ .AgentName }}" && exit 1)
 
 FROM gcr.io/distroless/base-debian12
 WORKDIR /app
