@@ -1,13 +1,16 @@
 # Agent {{ .AgentName }} — Docker+WASM runtime overlay
 # WASM modules mount under /wasm; HTTP on PORT (default 8080)
-FROM golang:1.22-alpine AS build
+FROM golang:1.25-alpine AS build
 WORKDIR /src
+COPY go.mod go.sum ./
+ENV GOTOOLCHAIN=auto
+RUN go mod download
 COPY . .
-RUN go build -o /out/agent .
+RUN CGO_ENABLED=0 GOOS=linux go build -o /out/{{ snake .AgentName }} ./cmd/{{ .AgentName }} || (echo "expected Go agent source under cmd/{{ .AgentName }}" && exit 1)
 
 FROM alpine:3.19
 WORKDIR /app
-COPY --from=build /out/agent /app/agent
+COPY --from=build /out/{{ snake .AgentName }} /app/{{ snake .AgentName }}
 ENV PORT=8080 WASM_DIR=/wasm
 EXPOSE 8080
-CMD ["/app/agent"]
+CMD ["/app/{{ snake .AgentName }}"]
