@@ -1,0 +1,87 @@
+// Package in holds gateway inbound-request handlers.
+package in
+
+import (
+	"encoding/json"
+	"net/http"
+	"os"
+	"strings"
+)
+
+// defaultAuthSkipPaths are always exempt from AuthGate, regardless of
+// GATEWAY_AUTH_SKIP_PATHS — the health probe must stay reachable for
+// container/orchestrator liveness checks even when bearer auth is enforced.
+var defaultAuthSkipPaths = map[string]bool{
+	"/healthz": true,
+}
+
+// AuthGate enforces the v1 gateway auth contract: every request must carry
+// "Authorization: Bearer <non-empty-token>" or it is rejected with 401 before
+// reaching the mux/proxy. This checks presence and format only — no
+// signature/crypto validation.
+func AuthGate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isAuthSkipPath(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if _, ok := bearerToken(r.Header.Get("Authorization")); !ok {
+			writeUnauthorized(w)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// bearerToken extracts the token from an "Authorization: Bearer <token>"
+// header. ok is false when the header is missing, malformed, or the token
+// is empty.
+func bearerToken(header string) (string, bool) {
+	const prefix = "Bearer "
+	if !strings.HasPrefix(header, prefix) {
+		return "", false
+	}
+	token := strings.TrimSpace(strings.TrimPrefix(header, prefix))
+	return token, token != ""
+}
+
+func writeUnauthorized(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error":   "unauthorized",
+		"message": "missing or invalid bearer token",
+	})
+}
+
+// isAuthSkipPath reports whether path is exempt from bearer enforcement: the
+// built-in health probe (with or without a trailing slash) plus any
+// comma-separated paths from GATEWAY_AUTH_SKIP_PATHS.
+func isAuthSkipPath(path string) bool {
+	trimmed := strings.TrimSuffix(path, "/")
+	if defaultAuthSkipPaths[path] || defaultAuthSkipPaths[trimmed] {
+		return true
+	}
+	for _, skip := range authSkipPathsFromEnv() {
+		if path == skip || trimmed == strings.TrimSuffix(skip, "/") {
+			return true
+		}
+	}
+	return false
+}
+
+func authSkipPathsFromEnv() []string {
+	raw := strings.TrimSpace(os.Getenv("GATEWAY_AUTH_SKIP_PATHS"))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}

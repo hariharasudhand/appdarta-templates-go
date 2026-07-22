@@ -2,44 +2,36 @@ apiVersion: appdarta.io/v1
 kind: CodeTemplate
 metadata:
   name: rest-gateway
-  displayName: REST Gateway
-  description: 'GW-* compliant gateway scaffold: mounts routes from handler YAMLs,
-    real middleware'
-  version: 1.0.0
-  author: AppDarta Platform
+  displayName: "REST Gateway"
+  description: "GW-* compliant gateway scaffold: mounts routes from handler YAMLs, real middleware"
+  version: "1.0.0"
+  author: "AppDarta Platform"
 spec:
   nodeKind: gateway
-  techStacks:
-  - Go
+  techStacks: [Go]
   patternKind: rest-gateway
   files:
-  - path: gateway/router.go
-    template: router.go.tmpl
-    description: "Route setup \u2014 reads in/out-handlers.yaml and mounts all handlers"
-  - path: gateway/middleware.go
-    template: middleware.go.tmpl
-    description: "Middleware chain \u2014 logging + request-ID injection (GW-NO-NOOP-MW\
-      \ compliant)"
-  - path: cmd/gateway/main.go
-    template: main.go.tmpl
-    description: "Entry point \u2014 creates mux, wires middleware, calls routes.Setup"
-  - path: gateway/Dockerfile
-    template: Dockerfile.tmpl
-    description: Multi-stage Docker build targeting ./cmd/gateway
-  - path: gateway/docker-compose.fragment.yml
-    template: docker-compose.fragment.yml.tmpl
-    description: Docker Compose fragment for gateway service (expose only, no host port
-      collision)
+    - path: "gateway/router.go"
+      template: "router.go.tmpl"
+      description: "Route setup — reads in/out-handlers.yaml and mounts all handlers"
+    - path: "gateway/middleware.go"
+      template: "middleware.go.tmpl"
+      description: "Middleware chain — bearer AuthGate + logging + request-ID injection (GW-NO-NOOP-MW compliant)"
+    - path: "gateway/handlers/in/auth.go"
+      template: "auth.go.tmpl"
+      description: "AuthGate — v1 bearer-format auth contract (presence/format only, no crypto validation)"
+    - path: "cmd/gateway/main.go"
+      template: "main.go.tmpl"
+      description: "Entry point — creates mux, wires middleware, calls routes.Setup"
+    - path: "gateway/Dockerfile"
+      template: "Dockerfile.tmpl"
+      description: "Multi-stage Docker build targeting ./cmd/gateway"
+    - path: "gateway/docker-compose.fragment.yml"
+      template: "docker-compose.fragment.yml.tmpl"
+      description: "Docker Compose fragment for gateway service (expose only, no host port collision)"
   intelligence:
     maturityLevel: stable
     complexityFloor: 2
     complexityIdeal: 5
     complexityCeiling: 10
-    tags:
-    - gateway
-    - go
-    - rest
-    - routes
-templatesApiVersion: '1'
-provenance:
-  signature: sha256:bd3af9869c236b9886ee48c26fb8a44288b85ea0ebbce0fca40146cddd62c36b
+    tags: [gateway, go, rest, routes]

@@ -6,12 +6,22 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"{{ .ModulePath }}/gateway/handlers/in"
 )
 
-// Chain wraps a handler with the standard gateway middleware stack:
-// request-ID injection → structured access logging → next handler.
+// Chain wraps a handler with the standard gateway middleware stack: bearer
+// AuthGate (outermost — rejects unauthenticated requests with 401 before
+// request-ID injection, logging, or mux/proxy dispatch ever run) → request-ID
+// injection → structured access logging → next handler.
 // GW-NO-NOOP-MW compliant: this is not a pass-through — it adds observable behaviour.
 func Chain(next http.Handler) http.Handler {
+	return in.AuthGate(loggingMiddleware(next))
+}
+
+// loggingMiddleware injects a correlation request ID and logs method/path/status/
+// duration for every request that passes AuthGate.
+func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
