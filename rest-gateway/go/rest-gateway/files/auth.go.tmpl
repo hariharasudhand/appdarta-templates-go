@@ -2,10 +2,15 @@
 package in
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
+	"time"
 )
 
 // defaultAuthSkipPaths are always exempt from AuthGate, regardless of
@@ -15,19 +20,59 @@ var defaultAuthSkipPaths = map[string]bool{
 	"/healthz": true,
 }
 
-// AuthGate enforces the v1 gateway auth contract: every request must carry
+// gatewayAuthMode selects how far AuthGate validates a bearer token.
+type gatewayAuthMode string
+
+const (
+	// gatewayAuthModeBearerFormat checks only "Authorization: Bearer <non-empty>" —
+	// presence and format, no signature or claims. This is the default so existing
+	// deployments are unaffected unless GATEWAY_AUTH_MODE is explicitly set.
+	gatewayAuthModeBearerFormat gatewayAuthMode = "bearer-format"
+	// gatewayAuthModeJWT additionally verifies an HS256-signed compact JWT:
+	// signature (HMAC-SHA256 against GATEWAY_JWT_SECRET) and the "exp"/"nbf" claims.
+	gatewayAuthModeJWT gatewayAuthMode = "jwt"
+)
+
+// authModeFromEnv reads GATEWAY_AUTH_MODE. Anything other than exactly "jwt"
+// (including unset/unrecognized) resolves to the safe bearer-format-only default.
+func authModeFromEnv() gatewayAuthMode {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("GATEWAY_AUTH_MODE")), "jwt") {
+		return gatewayAuthModeJWT
+	}
+	return gatewayAuthModeBearerFormat
+}
+
+// AuthGate enforces the gateway auth contract: every request must carry
 // "Authorization: Bearer <non-empty-token>" or it is rejected with 401 before
-// reaching the mux/proxy. This checks presence and format only — no
-// signature/crypto validation.
+// reaching the mux/proxy.
+//
+// Default mode ("bearer-format", or GATEWAY_AUTH_MODE unset/anything else):
+// presence and format only — no signature or claims validation. This is a
+// deliberately thin v1 contract, not production auth.
+//
+// GATEWAY_AUTH_MODE=jwt: additionally requires the token to be a well-formed,
+// HS256-signed compact JWT (header.payload.signature) verified against
+// GATEWAY_JWT_SECRET, with a valid, unexpired "exp" claim. Honest limits of
+// this thin slice: HS256 only (no RS/ES/PS algorithms), a single static
+// shared secret from an environment variable (no JWKS, no key rotation, no
+// external secrets manager), no revocation/deny-list, no audience/issuer
+// checks.
 func AuthGate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isAuthSkipPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if _, ok := bearerToken(r.Header.Get("Authorization")); !ok {
-			writeUnauthorized(w)
+		token, ok := bearerToken(r.Header.Get("Authorization"))
+		if !ok {
+			writeUnauthorized(w, "missing or invalid bearer token")
 			return
+		}
+		if authModeFromEnv() == gatewayAuthModeJWT {
+			if err := validateJWT(token, jwtSecretFromEnv()); err != nil {
+				writeUnauthorized(w, "invalid token: "+err.Error())
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -45,12 +90,79 @@ func bearerToken(header string) (string, bool) {
 	return token, token != ""
 }
 
-func writeUnauthorized(w http.ResponseWriter) {
+// jwtSecretFromEnv reads the HS256 shared secret. A thin slice keeps this to
+// a single environment variable; production auth would source this from a
+// secrets manager with rotation.
+func jwtSecretFromEnv() string {
+	return strings.TrimSpace(os.Getenv("GATEWAY_JWT_SECRET"))
+}
+
+// validateJWT verifies an HS256-signed compact JWT beyond format: the header
+// must declare alg "HS256" (rejecting "none" and any asymmetric algorithm),
+// the signature must match an HMAC-SHA256 recomputation over
+// "header.payload" using secret (constant-time compare), and the payload
+// must carry a present, unexpired "exp" claim (and a satisfied "nbf" claim,
+// if present).
+func validateJWT(token, secret string) error {
+	if secret == "" {
+		return fmt.Errorf("server missing GATEWAY_JWT_SECRET")
+	}
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return fmt.Errorf("malformed token: expected 3 segments")
+	}
+	headerJSON, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return fmt.Errorf("malformed header segment")
+	}
+	var header struct {
+		Alg string `json:"alg"`
+	}
+	if err := json.Unmarshal(headerJSON, &header); err != nil {
+		return fmt.Errorf("malformed header JSON")
+	}
+	if header.Alg != "HS256" {
+		return fmt.Errorf("unsupported alg %q", header.Alg)
+	}
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		return fmt.Errorf("malformed signature segment")
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(parts[0] + "." + parts[1]))
+	if !hmac.Equal(sig, mac.Sum(nil)) {
+		return fmt.Errorf("signature mismatch")
+	}
+	payloadJSON, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return fmt.Errorf("malformed payload segment")
+	}
+	var claims struct {
+		Exp *float64 `json:"exp"`
+		Nbf *float64 `json:"nbf"`
+	}
+	if err := json.Unmarshal(payloadJSON, &claims); err != nil {
+		return fmt.Errorf("malformed payload JSON")
+	}
+	if claims.Exp == nil {
+		return fmt.Errorf("missing exp claim")
+	}
+	now := float64(time.Now().Unix())
+	if now >= *claims.Exp {
+		return fmt.Errorf("token expired")
+	}
+	if claims.Nbf != nil && now < *claims.Nbf {
+		return fmt.Errorf("token not yet valid")
+	}
+	return nil
+}
+
+func writeUnauthorized(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"error":   "unauthorized",
-		"message": "missing or invalid bearer token",
+		"message": message,
 	})
 }
 
