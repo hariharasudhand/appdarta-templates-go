@@ -10,13 +10,47 @@ import (
 	"{{ .ModulePath }}/gateway/handlers/in"
 )
 
-// Chain wraps a handler with the standard gateway middleware stack: bearer
-// AuthGate (outermost — rejects unauthenticated requests with 401 before
-// request-ID injection, logging, or mux/proxy dispatch ever run) → request-ID
-// injection → structured access logging → next handler.
+// allowedLocalOrigins are the only browser origins granted local-dev CORS
+// access: the Vite product-UI dev server. Deliberately not "*" — production
+// traffic never carries a browser Origin header, so this is dev-only surface.
+var allowedLocalOrigins = map[string]bool{
+	"http://127.0.0.1:5173": true,
+	"http://localhost:5173": true,
+}
+
+// Chain wraps a handler with the standard gateway middleware stack: local
+// CORS (outermost — answers a browser preflight OPTIONS with 204 before
+// AuthGate ever runs, since preflight requests never carry an Authorization
+// header) → bearer AuthGate (rejects unauthenticated non-preflight requests
+// with 401) → request-ID injection → structured access logging → next
+// handler.
 // GW-NO-NOOP-MW compliant: this is not a pass-through — it adds observable behaviour.
 func Chain(next http.Handler) http.Handler {
-	return in.AuthGate(loggingMiddleware(next))
+	return withLocalCORS(in.AuthGate(loggingMiddleware(next)))
+}
+
+// withLocalCORS allows the local product-UI dev server (Vite on :5173) to
+// call the gateway cross-origin during local runs. It sits outermost in
+// Chain so a CORS preflight (OPTIONS) short-circuits with 204 before AuthGate
+// runs — browsers never attach Authorization to preflight requests, so
+// gating them on a bearer would break every cross-origin call. Only the two
+// local Vite origins are allowed; this is not "*" and is not for any
+// deployed environment.
+func withLocalCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := r.Header.Get("Origin")
+		if allowedLocalOrigins[origin] {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Vary", "Origin")
+		}
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // loggingMiddleware injects a correlation request ID and logs method/path/status/
