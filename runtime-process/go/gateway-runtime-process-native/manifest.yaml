@@ -1,0 +1,33 @@
+apiVersion: appdarta.io/v1
+kind: CodeTemplate
+metadata:
+  name: gateway-runtime-process-native
+  displayName: Gateway Runtime Overlay (Process, Native)
+  description: 'Local process launcher for runtime: process gateway — go run entrypoint,
+    GATEWAY_PORT/GATEWAY_CONFIG_DIR env, health hint. Docker-free app runtime (D1).'
+  version: 1.0.0
+  author: AppDarta Platform
+spec:
+  provenance:
+    sourceKind: core
+  nodeKind: gateway
+  techStacks:
+  - Go
+  patternKind: runtime-process
+  files:
+  - path: gateway/run-local.sh
+    template: run-local.sh.tmpl
+    description: Executable gateway local process launcher (no Docker required)
+  intelligence:
+    maturityLevel: stable
+    complexityFloor: 1
+    complexityIdeal: 1
+    complexityCeiling: 2
+    tags:
+    - overlay
+    - process
+    - runtime
+    - native
+    - docker-free
+    - gateway
+templatesApiVersion: '1'

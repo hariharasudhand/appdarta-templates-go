@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Local process launcher for the AppDarta gateway — Docker-free app runtime (D1).
+# DB/infra dependencies (if any) are still expected to be reachable separately;
+# see the project root Makefile's `deps-up` target (Compose or native, depending
+# on how those tanks were packaged — this script only starts the gateway process).
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+GATEWAY_PORT="${GATEWAY_PORT:-8080}"
+GATEWAY_CONFIG_DIR="${GATEWAY_CONFIG_DIR:-config/gateway}"
+export GATEWAY_PORT GATEWAY_CONFIG_DIR
+
+echo "Starting gateway on :$GATEWAY_PORT (process runtime, config=$GATEWAY_CONFIG_DIR)"
+echo "Health check: curl -sf http://localhost:$GATEWAY_PORT/healthz"
+exec go run ./cmd/gateway

@@ -1,0 +1,32 @@
+apiVersion: appdarta.io/v1
+kind: CodeTemplate
+metadata:
+  name: agent-runtime-process-native
+  displayName: Agent Runtime Overlay (Process, Native)
+  description: 'Local process launcher for runtime: process agents — go run entrypoint,
+    PORT env, health hint. Docker-free app runtime (D1).'
+  version: 1.0.0
+  author: AppDarta Platform
+spec:
+  provenance:
+    sourceKind: core
+  nodeKind: agent
+  techStacks:
+  - Go
+  patternKind: runtime-process
+  files:
+  - path: agents/{{ .AgentName }}/run-local.sh
+    template: run-local.sh.tmpl
+    description: Executable local process launcher (no Docker required)
+  intelligence:
+    maturityLevel: stable
+    complexityFloor: 1
+    complexityIdeal: 1
+    complexityCeiling: 2
+    tags:
+    - overlay
+    - process
+    - runtime
+    - native
+    - docker-free
+templatesApiVersion: '1'
